@@ -2,51 +2,48 @@ package config
 
 import (
 	"os"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the top-level portwatch configuration.
+// Config holds all portwatch runtime settings.
 type Config struct {
-	Hosts    []string      `yaml:"hosts"`
-	Ports    []int         `yaml:"ports"`
-	Interval time.Duration `yaml:"interval"`
-	StorePath string       `yaml:"store_path"`
-	Alert    AlertConfig   `yaml:"alert"`
+	Hosts        []string `yaml:"hosts"`
+	IntervalSecs int      `yaml:"interval_secs"`
+	StorePath    string   `yaml:"store_path"`
+	AlertOutput  string   `yaml:"alert_output"` // stdout | file
+	AlertFile    string   `yaml:"alert_file"`
+	ReportFormat string   `yaml:"report_format"` // text | json
+	Filter       struct {
+		IncludePorts []string `yaml:"include_ports"`
+		ExcludePorts []string `yaml:"exclude_ports"`
+		MinPort      int      `yaml:"min_port"`
+		MaxPort      int      `yaml:"max_port"`
+	} `yaml:"filter"`
 }
 
-// AlertConfig configures alerting output.
-type AlertConfig struct {
-	Output string `yaml:"output"` // "stdout" or a file path
-}
-
-// Defaults returns a Config populated with sensible defaults.
+// Defaults returns a Config with sensible default values.
 func Defaults() Config {
 	return Config{
-		Hosts:     []string{"localhost"},
-		Ports:     []int{22, 80, 443, 8080},
-		Interval:  60 * time.Second,
-		StorePath: "portwatch.db",
-		Alert: AlertConfig{
-			Output: "stdout",
-		},
+		Hosts:        []string{"localhost"},
+		IntervalSecs: 60,
+		StorePath:    "portwatch.db",
+		AlertOutput:  "stdout",
+		ReportFormat: "text",
 	}
 }
 
-// Load reads a YAML config file from path and merges it over defaults.
+// Load reads a YAML config file and merges it over the defaults.
 func Load(path string) (Config, error) {
 	cfg := Defaults()
-
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
 		return cfg, err
 	}
-	defer f.Close()
-
-	dec := yaml.NewDecoder(f)
-	dec.KnownFields(true)
-	if err := dec.Decode(&cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, err
 	}
 	return cfg, nil

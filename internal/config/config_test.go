@@ -1,74 +1,65 @@
-package config_test
+package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/your-org/portwatch/internal/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "portwatch-*.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString(content); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	return f.Name()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(content), 0644))
+	return p
 }
 
 func TestDefaults(t *testing.T) {
-	cfg := config.Defaults()
-	if cfg.Interval != 60*time.Second {
-		t.Errorf("expected 60s interval, got %v", cfg.Interval)
-	}
-	if cfg.Alert.Output != "stdout" {
-		t.Errorf("expected stdout alert output, got %q", cfg.Alert.Output)
-	}
-	if len(cfg.Hosts) == 0 {
-		t.Error("expected at least one default host")
-	}
+	cfg := Defaults()
+	assert.Equal(t, []string{"localhost"}, cfg.Hosts)
+	assert.Equal(t, 60, cfg.IntervalSecs)
+	assert.Equal(t, "portwatch.db", cfg.StorePath)
+	assert.Equal(t, "stdout", cfg.AlertOutput)
+	assert.Equal(t, "text", cfg.ReportFormat)
 }
 
 func TestLoad_OverridesDefaults(t *testing.T) {
-	yaml := `
+	p := writeTemp(t, `
 hosts:
-  - 10.0.0.1
+  - 192.168.1.1
   - 10.0.0.2
-ports:
-  - 22
-  - 3306
-interval: 30s
-store_path: /tmp/pw.db
-alert:
-  output: /var/log/portwatch.log
-`
-	path := writeTemp(t, yaml)
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cfg.Hosts) != 2 || cfg.Hosts[0] != "10.0.0.1" {
-		t.Errorf("hosts not loaded correctly: %v", cfg.Hosts)
-	}
-	if cfg.Interval != 30*time.Second {
-		t.Errorf("expected 30s, got %v", cfg.Interval)
-	}
-	if cfg.StorePath != "/tmp/pw.db" {
-		t.Errorf("unexpected store path: %s", cfg.StorePath)
-	}
-	if cfg.Alert.Output != "/var/log/portwatch.log" {
-		t.Errorf("unexpected alert output: %s", cfg.Alert.Output)
-	}
+interval_secs: 30
+report_format: json
+`)
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"192.168.1.1", "10.0.0.2"}, cfg.Hosts)
+	assert.Equal(t, 30, cfg.IntervalSecs)
+	assert.Equal(t, "json", cfg.ReportFormat)
+	// defaults preserved
+	assert.Equal(t, "portwatch.db", cfg.StorePath)
 }
 
 func TestLoad_MissingFile(t *testing.T) {
-	_, err := config.Load("/nonexistent/portwatch.yaml")
-	if err == nil {
-		t.Error("expected error for missing file")
-	}
+	cfg, err := Load("/nonexistent/path/config.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, Defaults(), cfg)
+}
+
+func TestLoad_FilterSection(t *testing.T) {
+	p := writeTemp(t, `
+filter:
+  include_ports: ["80", "443"]
+  exclude_ports: ["22"]
+  min_port: 1
+  max_port: 9000
+`)
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"80", "443"}, cfg.Filter.IncludePorts)
+	assert.Equal(t, []string{"22"}, cfg.Filter.ExcludePorts)
+	assert.Equal(t, 9000, cfg.Filter.MaxPort)
 }
