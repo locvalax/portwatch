@@ -5,44 +5,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 )
 
-// SlackChannel sends messages to a Slack incoming webhook URL.
-type SlackChannel struct {
-	WebhookURL string
+// Slack sends notifications to a Slack incoming webhook URL.
+type Slack struct {
+	webhookURL string
 	client     *http.Client
 }
 
-type slackPayload struct {
-	Text string `json:"text"`
-}
-
-// NewSlack creates a SlackChannel.
-func NewSlack(webhookURL string) *SlackChannel {
-	return &SlackChannel{
-		WebhookURL: webhookURL,
-		client:     &http.Client{Timeout: 10 * time.Second},
+// NewSlack creates a new Slack notifier.
+func NewSlack(webhookURL string) *Slack {
+	return &Slack{
+		webhookURL: webhookURL,
+		client:     &http.Client{},
 	}
 }
 
-// Send posts a formatted message to Slack.
-func (s *SlackChannel) Send(subject, body string) error {
-	text := fmt.Sprintf("*%s*\n```%s```", subject, body)
-	payload := slackPayload{Text: text}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("slack marshal: %w", err)
+// Send posts a message to Slack.
+func (s *Slack) Send(subject, body string) error {
+	payload := map[string]string{
+		"text": fmt.Sprintf("*%s*\n%s", subject, body),
 	}
-
-	resp, err := s.client.Post(s.WebhookURL, "application/json", bytes.NewReader(data))
+	b, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("slack post: %w", err)
+		return fmt.Errorf("slack: marshal payload: %w", err)
+	}
+	resp, err := s.client.Post(s.webhookURL, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return fmt.Errorf("slack: post: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("slack response: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("slack: unexpected status %d", resp.StatusCode)
 	}
 	return nil
 }
