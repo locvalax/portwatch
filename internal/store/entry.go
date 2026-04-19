@@ -14,3 +14,13 @@ type Entry struct {
 	ScannedAt time.Time    `json:"scanned_at"`
 	Ports     []PortResult `json:"ports"`
 }
+
+// HasPort reports whether the entry contains the given port and protocol.
+func (e *Entry) HasPort(port int, proto string) bool {
+	for _, p := range e.Ports {
+		if p.Port == port && p.Proto == proto {
+			return true
+		}
+	}
+	return false
+}
