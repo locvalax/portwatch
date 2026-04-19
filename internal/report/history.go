@@ -32,3 +32,16 @@ func (b *Builder) ForHost(host string, limit int) ([]Entry, error) {
 	}
 	return entries, nil
 }
+
+// Latest returns the most recent entry for the given host, or nil if no
+// history exists.
+func (b *Builder) Latest(host string) (*Entry, error) {
+	entries, err := b.ForHost(host, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	return &entries[0], nil
+}
