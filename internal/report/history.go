@@ -2,46 +2,125 @@ package report
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"sort"
+	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/user/portwatch/internal/store"
 )
 
-// Builder collects scan results from the store and builds report entries.
+// Builder accumulates scan entries and renders historical summaries.
 type Builder struct {
-	st *store.Store
+	w io.Writer
 }
 
-// NewBuilder creates a Builder backed by the given store.
-func NewBuilder(st *store.Store) *Builder {
-	return &Builder{st: st}
-}
-
-// ForHost returns up to limit entries for the given host, newest first.
-func (b *Builder) ForHost(host string, limit int) ([]Entry, error) {
-	records, err := b.st.History(host, limit)
-	if err != nil {
-		return nil, fmt.Errorf("report: history for %s: %w", host, err)
+// NewBuilder returns a Builder that writes to w.
+// If w is nil, os.Stdout is used.
+func NewBuilder(w io.Writer) *Builder {
+	if w == nil {
+		w = os.Stdout
 	}
-	entries := make([]Entry, 0, len(records))
-	for _, rec := range records {
-		entries = append(entries, Entry{
-			Host:      host,
-			Timestamp: rec.Timestamp,
-			Ports:     rec.Ports,
+	return &Builder{w: w}
+}
+
+// Summary holds aggregated stats for a single host across all stored scans.
+type Summary struct {
+	Host      string
+	ScanCount int
+	FirstSeen time.Time
+	LastSeen  time.Time
+	// UniquePorts is the union of all ports ever observed open.
+	UniquePorts []uint16
+}
+
+// Build computes per-host summaries from the provided entries.
+func (b *Builder) Build(entries []store.Entry) []Summary {
+	type hostData struct {
+		count int
+		first time.Time
+		last  time.Time
+		ports map[uint16]struct{}
+	}
+
+	m := make(map[string]*hostData)
+	for _, e := range entries {
+		hd, ok := m[e.Host]
+		if !ok {
+			hd = &hostData{
+				first: e.ScannedAt,
+				last:  e.ScannedAt,
+				ports: make(map[uint16]struct{}),
+			}
+			m[e.Host] = hd
+		}
+		hd.count++
+		if e.ScannedAt.Before(hd.first) {
+			hd.first = e.ScannedAt
+		}
+		if e.ScannedAt.After(hd.last) {
+			hd.last = e.ScannedAt
+		}
+		for _, p := range e.Ports {
+			hd.ports[p] = struct{}{}
+		}
+	}
+
+	summaries := make([]Summary, 0, len(m))
+	for host, hd := range m {
+		ports := make([]uint16, 0, len(hd.ports))
+		for p := range hd.ports {
+			ports = append(ports, p)
+		}
+		sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
+		summaries = append(summaries, Summary{
+			Host:        host,
+			ScanCount:   hd.count,
+			FirstSeen:   hd.first,
+			LastSeen:    hd.last,
+			UniquePorts: ports,
 		})
 	}
-	return entries, nil
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].Host < summaries[j].Host
+	})
+	return summaries
 }
 
-// Latest returns the most recent entry for the given host, or nil if no
-// history exists.
-func (b *Builder) Latest(host string) (*Entry, error) {
-	entries, err := b.ForHost(host, 1)
-	if err != nil {
-		return nil, err
+// Write renders the summaries as a human-readable table.
+func (b *Builder) Write(summaries []Summary) error {
+	if len(summaries) == 0 {
+		_, err := fmt.Fprintln(b.w, "no history available")
+		return err
 	}
-	if len(entries) == 0 {
-		return nil, nil
+
+	tw := tabwriter.NewWriter(b.w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "HOST\tSCANS\tFIRST SEEN\tLAST SEEN\tUNIQUE PORTS")
+	fmt.Fprintln(tw, strings.Repeat("-", 72))
+	const timeFmt = "2006-01-02 15:04"
+	for _, s := range summaries {
+		ports := formatPorts(s.UniquePorts)
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n",
+			s.Host,
+			s.ScanCount,
+			s.FirstSeen.Format(timeFmt),
+			s.LastSeen.Format(timeFmt),
+			ports,
+		)
 	}
-	return &entries[0], nil
+	return tw.Flush()
+}
+
+// formatPorts converts a sorted slice of port numbers to a compact string.
+func formatPorts(ports []uint16) string {
+	if len(ports) == 0 {
+		return "none"
+	}
+	parts := make([]string, len(ports))
+	for i, p := range ports {
+		parts[i] = fmt.Sprintf("%d", p)
+	}
+	return strings.Join(parts, ", ")
 }
