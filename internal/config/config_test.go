@@ -49,6 +49,15 @@ func TestLoad_MissingFile(t *testing.T) {
 	assert.Equal(t, Defaults(), cfg)
 }
 
+func TestLoad_InvalidYAML(t *testing.T) {
+	p := writeTemp(t, `
+hosts: [unclosed bracket
+interval_secs: not_a_number
+`)
+	_, err := Load(p)
+	require.Error(t, err)
+}
+
 func TestLoad_FilterSection(t *testing.T) {
 	p := writeTemp(t, `
 filter:
