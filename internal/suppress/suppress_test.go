@@ -57,6 +57,14 @@ func TestIsSuppressed_DifferentHosts_Independent(t *testing.T) {
 	}
 }
 
+func TestIsSuppressed_DifferentPorts_Independent(t *testing.T) {
+	s := New(5 * time.Minute)
+	s.IsSuppressed("host", 22, true)
+	if s.IsSuppressed("host", 80, true) {
+		t.Fatal("different ports should be tracked independently")
+	}
+}
+
 func TestReset_ClearsHost(t *testing.T) {
 	s := New(5 * time.Minute)
 	s.IsSuppressed("host-a", 22, true)
@@ -86,6 +94,21 @@ func TestFlush_RemovesExpiredEntries(t *testing.T) {
 
 	if len(s.entries) != 0 {
 		t.Fatalf("expected 0 entries after flush, got %d", len(s.entries))
+	}
+}
+
+func TestFlush_RetainsActiveEntries(t *testing.T) {
+	now := time.Now()
+	s := New(5 * time.Minute)
+	s.now = fixedNow(now)
+	s.IsSuppressed("host", 8080, true)
+
+	// advance but stay within window
+	s.now = fixedNow(now.Add(2 * time.Minute))
+	s.Flush()
+
+	if len(s.entries) != 1 {
+		t.Fatalf("expected 1 entry after flush within window, got %d", len(s.entries))
 	}
 }
 
