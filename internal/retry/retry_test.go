@@ -57,6 +57,22 @@ func TestDo_ExhaustsAttempts(t *testing.T) {
 	}
 }
 
+// TestDo_ExhaustsAttempts_WrapsOriginalError verifies that the error returned
+// after exhausting all attempts wraps the original error from the last attempt,
+// allowing callers to inspect it via errors.Is or errors.As.
+func TestDo_ExhaustsAttempts_WrapsOriginalError(t *testing.T) {
+	p := Policy{MaxAttempts: 2, Delay: 0, Multiplier: 1}
+	err := p.Do(context.Background(), func() error {
+		return errTemp
+	})
+	if !errors.Is(err, ErrExhausted) {
+		t.Fatalf("expected ErrExhausted, got %v", err)
+	}
+	if !errors.Is(err, errTemp) {
+		t.Fatalf("expected wrapped errTemp, got %v", err)
+	}
+}
+
 func TestDo_ContextCancelled(t *testing.T) {
 	p := Policy{MaxAttempts: 5, Delay: 100 * time.Millisecond, Multiplier: 1}
 	ctx, cancel := context.WithCancel(context.Background())
