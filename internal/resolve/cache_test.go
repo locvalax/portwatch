@@ -86,3 +86,19 @@ func TestCache_ExpiredEntry_Refreshes(t *testing.T) {
 		t.Error("expected at least one address after cache refresh")
 	}
 }
+
+func TestCache_Invalidate_UnknownHost_IsNoop(t *testing.T) {
+	// Invalidating a host that was never resolved should not panic or error.
+	r := New(2 * time.Second)
+	c := NewCache(r, 10*time.Second)
+
+	c.Invalidate("nonexistent.example.invalid")
+
+	c.mu.Lock()
+	n := len(c.entries)
+	c.mu.Unlock()
+
+	if n != 0 {
+		t.Errorf("expected 0 entries, got %d", n)
+	}
+}
