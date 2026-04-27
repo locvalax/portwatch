@@ -47,3 +47,17 @@ func TestCompare_EmptyBaseline(t *testing.T) {
 		t.Errorf("opened: got %v", got)
 	}
 }
+
+func TestCompare_BothOpenedAndClosed(t *testing.T) {
+	snap := Snapshot{Ports: []int{22, 80, 8080}}
+	diff := Compare(snap, []int{22, 443, 8443})
+	if got := sorted(diff.Opened); len(got) != 2 || got[0] != 443 || got[1] != 8443 {
+		t.Errorf("opened: got %v want [443 8443]", got)
+	}
+	if got := sorted(diff.Closed); len(got) != 2 || got[0] != 80 || got[1] != 8080 {
+		t.Errorf("closed: got %v want [80 8080]", got)
+	}
+	if !diff.HasChanges() {
+		t.Errorf("expected changes but HasChanges returned false")
+	}
+}
