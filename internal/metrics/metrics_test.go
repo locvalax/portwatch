@@ -72,3 +72,17 @@ func TestDifferentHosts_Independent(t *testing.T) {
 		t.Fatalf("y: expected 1, got %d", snap["y"].Scans)
 	}
 }
+
+func TestSnapshot_IsIndependentCopy(t *testing.T) {
+	c := New()
+	c.RecordScan("host-f")
+	snap1 := c.Snapshot()
+	c.RecordScan("host-f")
+	snap2 := c.Snapshot()
+	if snap1["host-f"].Scans != 1 {
+		t.Fatalf("snap1: expected 1 scan, got %d", snap1["host-f"].Scans)
+	}
+	if snap2["host-f"].Scans != 2 {
+		t.Fatalf("snap2: expected 2 scans, got %d", snap2["host-f"].Scans)
+	}
+}
